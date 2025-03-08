@@ -1,13 +1,12 @@
-
 import sys
 import coloredlogs, logging
 import signal
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QLabel
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
-from PyQt6.QtGui import QPainter, QColor, QPen
-from PyQt6.QtCore import Qt, QPoint
+from PyQt6.QtGui import QPainter, QColor, QPen, QTextDocument
+from PyQt6.QtCore import Qt, QPoint, QRect
 
 @dataclass
 class State:
@@ -17,7 +16,6 @@ class State:
     def reduce(self, action, logger):
         if action['type'] == 'SELECT_POINT':
             self.selected_point = action['payload']
-            # logger.info(f"Point selected: {action['payload']}")
         elif action['type'] == 'MOVE_POINT' and self.selected_point is not None:
             line_index, point_index = self.selected_point
             line = self.lines[line_index]
@@ -26,19 +24,15 @@ class State:
                 self.lines[line_index] = (new_point, line[1])
             else:
                 self.lines[line_index] = (line[0], new_point)
-            # logger.info(f"Point moved to: {new_point}")
 
 def do_lines_intersect(line1: Tuple[Tuple[int, int], Tuple[int, int]], line2: Tuple[Tuple[int, int], Tuple[int, int]]) -> Optional[Tuple[int, int]]:
     """Check if two line segments intersect and return the intersection point if they do."""
     def ccw(A, B, C):
-        # Check if the points A, B, C are listed in a counterclockwise order
         return (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0])
 
     A, B = line1
     C, D = line2
-    # Lines intersect if the points A, B are on different sides of line CD and points C, D are on different sides of line AB
     if ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D):
-        # Calculate intersection point
         def line(p1, p2):
             A = (p1[1] - p2[1])
             B = (p2[0] - p1[0])
@@ -67,7 +61,7 @@ class OpenGLWidget(QOpenGLWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(event.rect(), QColor(255, 255, 255))
+        painter.fillRect(event.rect(), QColor(192, 192, 192))  # Set background to gray
         
         intersection_point = None
         if len(self.state.lines) >= 2:
@@ -76,19 +70,50 @@ class OpenGLWidget(QOpenGLWidget):
         pen_color = QColor(255, 0, 0) if intersection_point else QColor(0, 0, 255)
         for line in self.state.lines:
             pen = QPen(pen_color)
-            pen.setWidth(5)  # Set thicker pen width
+            pen.setWidth(5)
             painter.setPen(pen)
             painter.drawLine(QPoint(*line[0]), QPoint(*line[1]))
             
-            # Draw anchor points with black outline
-            painter.setBrush(QColor(255, 0, 0))  # Set color for anchor points
-            painter.setPen(QColor(0, 0, 0))  # Set outline color to black
+            painter.setBrush(QColor(255, 0, 0))
+            painter.setPen(QColor(0, 0, 0))
             painter.drawEllipse(QPoint(*line[0]), 5, 5)
             painter.drawEllipse(QPoint(*line[1]), 5, 5)
 
         if intersection_point:
-            painter.setBrush(QColor(255, 255, 0))  # Yellow for intersection point
+            painter.setBrush(QColor(255, 255, 0))
             painter.drawEllipse(QPoint(*intersection_point), 5, 5)
+
+        self.drawDataPanel(painter, intersection_point)
+
+    def drawDataPanel(self, painter, intersection_point):
+        text_lines = []
+        for i, line in enumerate(self.state.lines):
+            p1, p2 = line
+            A, B, C = self.lineEquation(p1, p2)
+            m = -A / B if B != 0 else float('inf')
+            b = -C / B if B != 0 else float('inf')
+            text_lines.append(f"<b>Line {i+1}:</b> (<span style='color:blue'>{p1[0]}</span>, <span style='color:blue'>{p1[1]}</span>) to (<span style='color:blue'>{p2[0]}</span>, <span style='color:blue'>{p2[1]}</span>)")
+            text_lines.append(f"<b>Equation (Standard Form):</b> <span style='color:red'>{A}</span>x + <span style='color:red'>{B}</span>y + <span style='color:red'>{C}</span> = 0")
+            text_lines.append(f"<b>Equation (Slope-Intercept Form):</b> y = <span style='color:green'>{round(m, 3)}</span>x + <span style='color:green'>{round(b, 3)}</span>")
+            text_lines.append(f"<b>Equation (Two-Point Form):</b> y - <span style='color:blue'>{p1[1]}</span> = <span style='color:green'>{round(m, 3)}</span>(x - <span style='color:blue'>{p1[0]}</span>)")
+
+        if intersection_point:
+            x, y = intersection_point
+            text_lines.append(f"<b>Intersection:</b> (<span style='color:green'>{round(x, 3)}</span>, <span style='color:green'>{round(y, 3)}</span>)")
+
+        document = QTextDocument()
+        document.setHtml("<span style='color:black'>" + "<br>".join(text_lines) + "</span>")
+        painter.save()
+        # Position the text in the lower left corner
+        painter.translate(10, self.height() - document.size().height() - 10)
+        document.drawContents(painter)
+        painter.restore()
+
+    def lineEquation(self, p1, p2):
+        A = p1[1] - p2[1]
+        B = p2[0] - p1[0]
+        C = p1[0] * p2[1] - p2[0] * p1[1]
+        return A, B, C
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -114,42 +139,33 @@ def handle_sigint(signal, frame):
     QApplication.quit()
 
 def main():
-    # Set up logging
     logger = logging.getLogger(__name__)
     coloredlogs.install(level='DEBUG', logger=logger)
-    logger.info("Starting PyQt6 application")
+    logger.info("Starting Line Intersection Visualizer")
 
-    # Set up SIGINT handler
     signal.signal(signal.SIGINT, handle_sigint)
 
-    # Set up PyQt6 application
     app = QApplication(sys.argv)
     window = QMainWindow()
-    window.setWindowTitle('PyQt6 OpenGL Line Renderer')
+    window.setWindowTitle('Line Intersection Visualizer')
 
-    # Get screen size and set window size to 2/3 of screen size
     screen = app.primaryScreen()
     screen_size = screen.size()
     window_width = int(screen_size.width() * 2 / 3)
     window_height = int(screen_size.height() * 2 / 3)
     window.resize(window_width, window_height)
 
-    # Center the window
     window.move((screen_size.width() - window_width) // 2, (screen_size.height() - window_height) // 2)
 
-    # Create state
     state = State()
 
-    # Create central widget and layout
     centralWidget = OpenGLWidget(window, state=state, logger=logger)
     layout = QVBoxLayout()
     layout.addWidget(centralWidget)
 
-    # Set layout on the central widget
     window.setCentralWidget(centralWidget)
     window.show()
 
-    logger.info("PyQt6 application is running")
     sys.exit(app.exec())
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ import sys
 import coloredlogs, logging
 import signal
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 from PyQt6.QtGui import QPainter, QColor, QPen
@@ -17,7 +17,7 @@ class State:
     def reduce(self, action, logger):
         if action['type'] == 'SELECT_POINT':
             self.selected_point = action['payload']
-            logger.info(f"Point selected: {action['payload']}")
+            # logger.info(f"Point selected: {action['payload']}")
         elif action['type'] == 'MOVE_POINT' and self.selected_point is not None:
             line_index, point_index = self.selected_point
             line = self.lines[line_index]
@@ -26,7 +26,36 @@ class State:
                 self.lines[line_index] = (new_point, line[1])
             else:
                 self.lines[line_index] = (line[0], new_point)
-            logger.info(f"Point moved to: {new_point}")
+            # logger.info(f"Point moved to: {new_point}")
+
+def do_lines_intersect(line1: Tuple[Tuple[int, int], Tuple[int, int]], line2: Tuple[Tuple[int, int], Tuple[int, int]]) -> Optional[Tuple[int, int]]:
+    """Check if two line segments intersect and return the intersection point if they do."""
+    def ccw(A, B, C):
+        # Check if the points A, B, C are listed in a counterclockwise order
+        return (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0])
+
+    A, B = line1
+    C, D = line2
+    # Lines intersect if the points A, B are on different sides of line CD and points C, D are on different sides of line AB
+    if ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D):
+        # Calculate intersection point
+        def line(p1, p2):
+            A = (p1[1] - p2[1])
+            B = (p2[0] - p1[0])
+            C = (p1[0] * p2[1] - p2[0] * p1[1])
+            return A, B, -C
+
+        L1 = line(A, B)
+        L2 = line(C, D)
+
+        D = L1[0] * L2[1] - L1[1] * L2[0]
+        Dx = L1[2] * L2[1] - L1[1] * L2[2]
+        Dy = L1[0] * L2[2] - L1[2] * L2[0]
+        if D != 0:
+            x = Dx / D
+            y = Dy / D
+            return int(x), int(y)
+    return None
 
 class OpenGLWidget(QOpenGLWidget):
     def __init__(self, parent=None, state=None, logger=None):
@@ -40,10 +69,15 @@ class OpenGLWidget(QOpenGLWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(event.rect(), QColor(255, 255, 255))
         
-        bluePen = QPen(QColor(0, 0, 255))
-        bluePen.setWidth(3)
+        intersection_point = None
+        if len(self.state.lines) >= 2:
+            intersection_point = do_lines_intersect(self.state.lines[0], self.state.lines[1])
+
+        pen_color = QColor(255, 0, 0) if intersection_point else QColor(0, 0, 255)
         for line in self.state.lines:
-            painter.setPen(bluePen)
+            pen = QPen(pen_color)
+            pen.setWidth(5)  # Set thicker pen width
+            painter.setPen(pen)
             painter.drawLine(QPoint(*line[0]), QPoint(*line[1]))
             
             # Draw anchor points with black outline
@@ -51,6 +85,10 @@ class OpenGLWidget(QOpenGLWidget):
             painter.setPen(QColor(0, 0, 0))  # Set outline color to black
             painter.drawEllipse(QPoint(*line[0]), 5, 5)
             painter.drawEllipse(QPoint(*line[1]), 5, 5)
+
+        if intersection_point:
+            painter.setBrush(QColor(255, 255, 0))  # Yellow for intersection point
+            painter.drawEllipse(QPoint(*intersection_point), 5, 5)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:

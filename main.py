@@ -10,7 +10,7 @@ from PyQt6.QtCore import Qt, QPoint, QRect
 
 @dataclass
 class State:
-    lines: List[Tuple[Tuple[int, int], Tuple[int, int]]] = field(default_factory=lambda: [((50, 100), (250, 100)), ((50, 200), (250, 200))])
+    lines: List[Tuple[Tuple[int, int], Tuple[int, int]]] = field(default_factory=lambda: [((-100, 0), (100, 0)), ((0, -100), (0, 100))])
     selected_point: Tuple[int, int] = None
 
     def reduce(self, action, logger):
@@ -62,7 +62,16 @@ class OpenGLWidget(QOpenGLWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(event.rect(), QColor(192, 192, 192))  # Set background to gray
-        
+
+        # Draw x and y axes
+        center_x = self.width() // 2
+        center_y = self.height() // 2
+        axis_pen = QPen(QColor(0, 0, 0))
+        axis_pen.setWidth(2)
+        painter.setPen(axis_pen)
+        painter.drawLine(QPoint(center_x, 0), QPoint(center_x, self.height()))  # y-axis
+        painter.drawLine(QPoint(0, center_y), QPoint(self.width(), center_y))  # x-axis
+
         intersection_point = None
         if len(self.state.lines) >= 2:
             intersection_point = do_lines_intersect(self.state.lines[0], self.state.lines[1])
@@ -72,16 +81,20 @@ class OpenGLWidget(QOpenGLWidget):
             pen = QPen(pen_color)
             pen.setWidth(5)
             painter.setPen(pen)
-            painter.drawLine(QPoint(*line[0]), QPoint(*line[1]))
+            # Adjust points to be centered on the screen
+            p1 = QPoint(center_x + line[0][0], center_y - line[0][1])
+            p2 = QPoint(center_x + line[1][0], center_y - line[1][1])
+            painter.drawLine(p1, p2)
             
             painter.setBrush(QColor(255, 0, 0))
             painter.setPen(QColor(0, 0, 0))
-            painter.drawEllipse(QPoint(*line[0]), 5, 5)
-            painter.drawEllipse(QPoint(*line[1]), 5, 5)
+            painter.drawEllipse(p1, 5, 5)
+            painter.drawEllipse(p2, 5, 5)
 
         if intersection_point:
             painter.setBrush(QColor(255, 255, 0))
-            painter.drawEllipse(QPoint(*intersection_point), 5, 5)
+            intersection_qpoint = QPoint(center_x + intersection_point[0], center_y - intersection_point[1])
+            painter.drawEllipse(intersection_qpoint, 5, 5)
 
         self.drawDataPanel(painter, intersection_point)
 
@@ -119,14 +132,17 @@ class OpenGLWidget(QOpenGLWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             for i, line in enumerate(self.state.lines):
                 for j, point in enumerate(line):
-                    if (QPoint(*point) - event.pos()).manhattanLength() < 10:
+                    adjusted_point = QPoint(self.width() // 2 + point[0], self.height() // 2 - point[1])
+                    if (adjusted_point - event.pos()).manhattanLength() < 10:
                         self.state.reduce({'type': 'SELECT_POINT', 'payload': (i, j)}, self.logger)
                         self.dragging = True
                         break
 
     def mouseMoveEvent(self, event):
         if self.dragging and self.state.selected_point is not None:
-            self.state.reduce({'type': 'MOVE_POINT', 'payload': (event.pos().x(), event.pos().y())}, self.logger)
+            new_x = event.pos().x() - self.width() // 2
+            new_y = self.height() // 2 - event.pos().y()
+            self.state.reduce({'type': 'MOVE_POINT', 'payload': (new_x, new_y)}, self.logger)
             self.update()
 
     def mouseReleaseEvent(self, event):

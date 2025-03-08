@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import List, Tuple
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
-from PyQt6.QtGui import QPainter, QColor
+from PyQt6.QtGui import QPainter, QColor, QPen
 from PyQt6.QtCore import Qt, QPoint
 
 @dataclass
@@ -40,9 +40,15 @@ class OpenGLWidget(QOpenGLWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(event.rect(), QColor(255, 255, 255))
         
-        painter.setPen(QColor(0, 0, 0))
+        bluePen = QPen(QColor(0, 0, 255))
+        bluePen.setWidth(3)
         for line in self.state.lines:
+            painter.setPen(bluePen)
             painter.drawLine(QPoint(*line[0]), QPoint(*line[1]))
+            
+            # Draw anchor points with black outline
+            painter.setBrush(QColor(255, 0, 0))  # Set color for anchor points
+            painter.setPen(QColor(0, 0, 0))  # Set outline color to black
             painter.drawEllipse(QPoint(*line[0]), 5, 5)
             painter.drawEllipse(QPoint(*line[1]), 5, 5)
 

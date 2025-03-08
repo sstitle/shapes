@@ -11,18 +11,29 @@ from PyQt6.QtCore import Qt, QPoint
 
 @dataclass
 class State:
-    points: List[Tuple[int, int]] = field(default_factory=list)
+    lines: List[Tuple[Tuple[int, int], Tuple[int, int]]] = field(default_factory=lambda: [((50, 100), (250, 100)), ((50, 200), (250, 200))])
+    selected_point: Tuple[int, int] = None
 
     def reduce(self, action, logger):
-        if action['type'] == 'ADD_POINT':
-            self.points.append(action['payload'])
-            logger.info(f"Point added: {action['payload']}")
+        if action['type'] == 'SELECT_POINT':
+            self.selected_point = action['payload']
+            logger.info(f"Point selected: {action['payload']}")
+        elif action['type'] == 'MOVE_POINT' and self.selected_point is not None:
+            line_index, point_index = self.selected_point
+            line = self.lines[line_index]
+            new_point = action['payload']
+            if point_index == 0:
+                self.lines[line_index] = (new_point, line[1])
+            else:
+                self.lines[line_index] = (line[0], new_point)
+            logger.info(f"Point moved to: {new_point}")
 
 class OpenGLWidget(QOpenGLWidget):
     def __init__(self, parent=None, state=None, logger=None):
         super(OpenGLWidget, self).__init__(parent)
         self.state = state
         self.logger = logger
+        self.dragging = False
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -30,17 +41,33 @@ class OpenGLWidget(QOpenGLWidget):
         painter.fillRect(event.rect(), QColor(255, 255, 255))
         
         painter.setPen(QColor(0, 0, 0))
-        for point in self.state.points:
-            painter.drawEllipse(QPoint(*point), 5, 5)
+        for line in self.state.lines:
+            painter.drawLine(QPoint(*line[0]), QPoint(*line[1]))
+            painter.drawEllipse(QPoint(*line[0]), 5, 5)
+            painter.drawEllipse(QPoint(*line[1]), 5, 5)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self.state.reduce({'type': 'ADD_POINT', 'payload': (event.pos().x(), event.pos().y())}, self.logger)
+            for i, line in enumerate(self.state.lines):
+                for j, point in enumerate(line):
+                    if (QPoint(*point) - event.pos()).manhattanLength() < 10:
+                        self.state.reduce({'type': 'SELECT_POINT', 'payload': (i, j)}, self.logger)
+                        self.dragging = True
+                        break
+
+    def mouseMoveEvent(self, event):
+        if self.dragging and self.state.selected_point is not None:
+            self.state.reduce({'type': 'MOVE_POINT', 'payload': (event.pos().x(), event.pos().y())}, self.logger)
             self.update()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.dragging = False
+            self.state.selected_point = None
 
 def handle_sigint(signal, frame):
     print("SIGINT received, exiting gracefully...")
-    sys.exit(0)
+    QApplication.quit()
 
 def main():
     # Set up logging
@@ -54,7 +81,17 @@ def main():
     # Set up PyQt6 application
     app = QApplication(sys.argv)
     window = QMainWindow()
-    window.setWindowTitle('PyQt6 OpenGL Point Renderer')
+    window.setWindowTitle('PyQt6 OpenGL Line Renderer')
+
+    # Get screen size and set window size to 2/3 of screen size
+    screen = app.primaryScreen()
+    screen_size = screen.size()
+    window_width = int(screen_size.width() * 2 / 3)
+    window_height = int(screen_size.height() * 2 / 3)
+    window.resize(window_width, window_height)
+
+    # Center the window
+    window.move((screen_size.width() - window_width) // 2, (screen_size.height() - window_height) // 2)
 
     # Create state
     state = State()

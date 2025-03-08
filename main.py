@@ -2,7 +2,41 @@
 import sys
 import coloredlogs, logging
 import signal
-from PyQt6.QtWidgets import QApplication, QLabel, QWidget, QVBoxLayout
+from dataclasses import dataclass, field
+from typing import List, Tuple
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout
+from PyQt6.QtOpenGLWidgets import QOpenGLWidget
+from PyQt6.QtGui import QPainter, QColor
+from PyQt6.QtCore import Qt, QPoint
+
+@dataclass
+class State:
+    points: List[Tuple[int, int]] = field(default_factory=list)
+
+    def reduce(self, action, logger):
+        if action['type'] == 'ADD_POINT':
+            self.points.append(action['payload'])
+            logger.info(f"Point added: {action['payload']}")
+
+class OpenGLWidget(QOpenGLWidget):
+    def __init__(self, parent=None, state=None, logger=None):
+        super(OpenGLWidget, self).__init__(parent)
+        self.state = state
+        self.logger = logger
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillRect(event.rect(), QColor(255, 255, 255))
+        
+        painter.setPen(QColor(0, 0, 0))
+        for point in self.state.points:
+            painter.drawEllipse(QPoint(*point), 5, 5)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.state.reduce({'type': 'ADD_POINT', 'payload': (event.pos().x(), event.pos().y())}, self.logger)
+            self.update()
 
 def handle_sigint(signal, frame):
     print("SIGINT received, exiting gracefully...")
@@ -19,21 +53,19 @@ def main():
 
     # Set up PyQt6 application
     app = QApplication(sys.argv)
-    window = QWidget()
-    window.setWindowTitle('PyQt6 Hello World')
+    window = QMainWindow()
+    window.setWindowTitle('PyQt6 OpenGL Point Renderer')
+
+    # Create state
+    state = State()
 
     # Create central widget and layout
-    centralWidget = QWidget(window)
-    layout = QVBoxLayout(centralWidget)
-    
-    # Add label to layout
-    helloMsg = QLabel('<h1>Hello, World with PyQt6!</h1>')
-    layout.addWidget(helloMsg)
+    centralWidget = OpenGLWidget(window, state=state, logger=logger)
+    layout = QVBoxLayout()
+    layout.addWidget(centralWidget)
 
     # Set layout on the central widget
-    centralWidget.setLayout(layout)
-    centralWidget.show()
-
+    window.setCentralWidget(centralWidget)
     window.show()
 
     logger.info("PyQt6 application is running")

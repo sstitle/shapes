@@ -2,6 +2,13 @@
 
 Nix environment for working with shapes.
 
+Install Nix with the Determinate Systems installer [here](https://github.com/DeterminateSystems/nix-installer):
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | \
+  sh -s -- install
+```
+
 ## Line Intersection Visualizer
 
 Simple demonstration application showing the calculation of the point of intersection of two line segments.

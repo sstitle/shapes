@@ -72,12 +72,22 @@ class OpenGLWidget(QOpenGLWidget):
         painter.drawLine(QPoint(center_x, 0), QPoint(center_x, self.height()))  # y-axis
         painter.drawLine(QPoint(0, center_y), QPoint(self.width(), center_y))  # x-axis
 
+        # Draw dotted lines for x and y scales every 100 pixels
+        scale_pen = QPen(QColor(128, 128, 128))
+        scale_pen.setStyle(Qt.PenStyle.DotLine)
+        painter.setPen(scale_pen)
+        for x in range(center_x % 100, self.width(), 100):
+            painter.drawLine(QPoint(x, 0), QPoint(x, self.height()))
+        for y in range(center_y % 100, self.height(), 100):
+            painter.drawLine(QPoint(0, y), QPoint(self.width(), y))
+
         intersection_point = None
         if len(self.state.lines) >= 2:
             intersection_point = do_lines_intersect(self.state.lines[0], self.state.lines[1])
 
         pen_color = QColor(255, 0, 0) if intersection_point else QColor(0, 0, 255)
-        for line in self.state.lines:
+        point_labels = ['A', 'B', 'C', 'D']
+        for line_index, line in enumerate(self.state.lines):
             pen = QPen(pen_color)
             pen.setWidth(5)
             painter.setPen(pen)
@@ -90,6 +100,10 @@ class OpenGLWidget(QOpenGLWidget):
             painter.setPen(QColor(0, 0, 0))
             painter.drawEllipse(p1, 5, 5)
             painter.drawEllipse(p2, 5, 5)
+
+            # Label the points with their coordinates
+            painter.drawText(p1 + QPoint(5, -5), f"{point_labels[line_index * 2]} ({line[0][0]}, {line[0][1]})")
+            painter.drawText(p2 + QPoint(5, -5), f"{point_labels[line_index * 2 + 1]} ({line[1][0]}, {line[1][1]})")
 
         if intersection_point:
             painter.setBrush(QColor(255, 255, 0))
